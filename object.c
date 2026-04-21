@@ -238,6 +238,7 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
 
     *data_out = data_copy;
     *len_out = data_size;
+    
     return 0;
 }
 
