@@ -82,7 +82,7 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
 
     // Build header: "<type> <size>\0"
     char header[64];
-    int header_len = snprintf(header, sizeof(header), "%s %zu", type_str, len) + 1; // +1 for '\0'
+    int header_len = snprintf(header, sizeof(header), "%s %zu", type_str, len) + 1; 
 
     // Allocate full object buffer
     size_t full_len = (size_t)header_len + len;
