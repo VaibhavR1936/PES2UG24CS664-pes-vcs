@@ -21,7 +21,7 @@
 #include <dirent.h>
 
 // ─── PROVIDED ────────────────────────────────────────────────────────────────
-
+int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
 // Find an index entry by path (linear scan).
 IndexEntry* index_find(Index *index, const char *path) {
     for (int i = 0; i < index->count; i++) {
@@ -173,18 +173,24 @@ int index_load(Index *index) {
 // Entries are sorted by path before writing.
 // Returns 0 on success, -1 on error.
 int index_save(const Index *index) {
-    // Make a sorted copy of the entries
-    Index sorted = *index;
-    qsort(sorted.entries, sorted.count, sizeof(IndexEntry), compare_index_entries);
+    // FIX: Allocate the massive sorted copy on the heap to prevent Stack Overflow!
+    Index *sorted = malloc(sizeof(Index));
+    if (!sorted) return -1;
+    
+    *sorted = *index;
+    qsort(sorted->entries, sorted->count, sizeof(IndexEntry), compare_index_entries);
 
     // Write to a temp file first
     char tmp_path[] = INDEX_FILE ".tmp";
     FILE *f = fopen(tmp_path, "w");
-    if (!f) return -1;
+    if (!f) {
+        free(sorted);
+        return -1;
+    }
 
     char hex[HASH_HEX_SIZE + 1];
-    for (int i = 0; i < sorted.count; i++) {
-        const IndexEntry *e = &sorted.entries[i];
+    for (int i = 0; i < sorted->count; i++) {
+        const IndexEntry *e = &sorted->entries[i];
         hash_to_hex(&e->hash, hex);
         fprintf(f, "%o %s %llu %llu %s\n",
                 e->mode,
@@ -202,20 +208,23 @@ int index_save(const Index *index) {
     // Atomically move the temp file over the old index
     if (rename(tmp_path, INDEX_FILE) != 0) {
         unlink(tmp_path);
+        free(sorted);
         return -1;
     }
 
+    free(sorted); // Clean up the heap memory!
     return 0;
 }
-
 // Stage a file for the next commit.
 // Reads the file, writes it as a blob object, then updates the index entry.
 // Returns 0 on success, -1 on error.
+
+// Stage a file for the next commit (DEBUG VERSION).
 int index_add(Index *index, const char *path) {
     // Step 1: Read the file contents
     FILE *f = fopen(path, "rb");
     if (!f) {
-        fprintf(stderr, "error: cannot open '%s'\n", path);
+        fprintf(stderr, "DEBUG: Failed to open file '%s'\n", path);
         return -1;
     }
 
@@ -223,18 +232,15 @@ int index_add(Index *index, const char *path) {
     long file_size = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    if (file_size < 0) {
-        fclose(f);
-        return -1;
-    }
-
     void *contents = malloc((size_t)file_size + 1);
     if (!contents) {
+        fprintf(stderr, "DEBUG: malloc failed\n");
         fclose(f);
         return -1;
     }
 
     if (file_size > 0 && fread(contents, 1, (size_t)file_size, f) != (size_t)file_size) {
+        fprintf(stderr, "DEBUG: fread failed\n");
         fclose(f);
         free(contents);
         return -1;
@@ -244,35 +250,30 @@ int index_add(Index *index, const char *path) {
     // Step 2: Write blob to object store
     ObjectID blob_id;
     if (object_write(OBJ_BLOB, contents, (size_t)file_size, &blob_id) != 0) {
+        fprintf(stderr, "DEBUG: object_write failed! Check your object.c file.\n");
         free(contents);
         return -1;
     }
     free(contents);
 
-    // Step 3: Get file metadata (mtime, size, mode)
+    // Step 3: Get file metadata
     struct stat st;
-    if (stat(path, &st) != 0) return -1;
+    if (stat(path, &st) != 0) {
+        fprintf(stderr, "DEBUG: stat failed\n");
+        return -1;
+    }
 
-    uint32_t mode;
-    if (st.st_mode & S_IXUSR)
-        mode = 0100755;
-    else
-        mode = 0100644;
+    uint32_t mode = (st.st_mode & S_IXUSR) ? 0100755 : 0100644;
 
     // Step 4: Update or add the index entry
     IndexEntry *existing = index_find(index, path);
     if (existing) {
-        // Update in place
         existing->hash     = blob_id;
         existing->mode     = mode;
         existing->mtime_sec = (uint64_t)st.st_mtime;
         existing->size     = (uint64_t)st.st_size;
     } else {
-        // Add a new entry
-        if (index->count >= MAX_INDEX_ENTRIES) {
-            fprintf(stderr, "error: index is full\n");
-            return -1;
-        }
+        if (index->count >= MAX_INDEX_ENTRIES) return -1;
         IndexEntry *ne = &index->entries[index->count];
         ne->hash      = blob_id;
         ne->mode      = mode;
@@ -284,6 +285,10 @@ int index_add(Index *index, const char *path) {
     }
 
     // Step 5: Save the updated index
-    return index_save(index);
-}
+    if (index_save(index) != 0) {
+        fprintf(stderr, "DEBUG: index_save failed! Cannot write to .pes/index.tmp\n");
+        return -1;
+    }
 
+    return 0;
+}
