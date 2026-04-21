@@ -147,8 +147,7 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
         fsync(dir_fd);
         close(dir_fd);
     }
-
-    return 0;
+  return 0;
 }
 
 // Read an object from the store.
