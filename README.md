@@ -23,6 +23,45 @@ make test_tree
 make test-integration
 ```
 
+# Implementation Screenshots
+
+## 🔹 Object Store (object.c)
+
+![Object Code](images/object.png)
+
+---
+
+## Tree Construction (tree.c)
+
+![Tree Code](images/tree.png)
+
+---
+
+## Index Handling (index.c)
+
+![Index Code](images/index.png)
+
+---
+
+## Commit Logic (commit.c)
+
+![Commit Code](images/commit.png)
+
+---
+
+### 📌 Explanation
+
+- These screenshots show the core implementation of the PES-VCS system.
+- Each module corresponds to a key Git concept:
+  - **object.c** → content-addressable storage
+  - **tree.c** → directory hierarchy
+  - **index.c** → staging area
+  - **commit.c** → version history
+
+- Together, they demonstrate how a version control system works internally.
+
+---
+
 ---
 
 # Phase 1 — Object Storage
